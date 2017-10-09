@@ -1,17 +1,24 @@
 
 var RED_PIN = 11, GREEN_PIN = 13, BLUE_PIN = 15;
-var LIGHT_PIN = 40;
+var SER_GPIO_PIN = 10;
 var rpio = require('rpio');
+
 var intervalIDs = [], intervalID = null;
 var watson = require('watson-developer-cloud');
 var config = require('./config');  // gets our username and passwords from the config.js files
+
+
+var Gpio = require('pigpio').Gpio,
+  motor = new Gpio(SER_GPIO_PIN, {mode: Gpio.OUTPUT}),
+  pulseWidth = 1000,
+  increment = 100;
+
+
 var speech_to_text = watson.speech_to_text({
     username: config.username,
     password: config.password,
     version: config.version
 });
-
-
 
 // Initiate Microphone Instance to Get audio samples
 var mic = require('mic');
@@ -41,8 +48,6 @@ var textStream = micInputStream.pipe(
     speech_to_text.createRecognizeStream(recognizeparams)
 );
 
-
-
 textStream.setEncoding('utf8');
 textStream.on('data', function(str) {
     console.log(' ===== Speech to Text ===== : ' + str); // print each text we receive
@@ -59,7 +64,7 @@ function parseText(str){
     var containsTurn = str.indexOf("turn") >= 0;
     var containsChange = str.indexOf("change") >= 0;
     var containsSet = str.indexOf("set") >= 0;
-    var containsLight = str.indexOf("the light") >= 0;
+    var containsLight = (str.indexOf("light") >= 0 || str.indexOf("right") >= 0 || str.indexOf("line") >= 0);
     var containsDisco = str.indexOf("disco") >= 0;
     var containsRainbow = str.indexOf("rainbow") >= 0;
 
@@ -93,6 +98,7 @@ var initPins = function(){
   rpio.open(RED_PIN,rpio.OUTPUT, rpio.HIGH);
   rpio.open(GREEN_PIN,rpio.OUTPUT, rpio.HIGH);
   rpio.open(BLUE_PIN,rpio.OUTPUT, rpio.HIGH);
+
 }
 
 var rpioVal = {
@@ -108,20 +114,6 @@ var turnLight = function (colorConfig){
 
 }
 
-var switchLight = function(command){
-  rpio.open(LIGHT_PIN,rpio.OUTPUT,rpio.LOW);
-  switch (command) {
-    case 'on':
-      console.log('vao on');
-      rpio.write(LIGHT_PIN,rpio.HIGH);
-      break;
-    case 'off':
-      rpio.write(LIGHT_PIN,rpio.LOW);
-      break;
-    default:
-      rpio.write(LIGHT_PIN,rpio.LOW);
-  }
-}
 // ----  reset LED before exit
 process.on('SIGINT', function () {
     initPins();
@@ -135,16 +127,9 @@ function setLED(msg){
    for(var i=0; i < words.length; i++){
      if (words[i] in colorPalette){
        color = colorPalette[words[i]];
-       /*inject code to switch lamp*/
-       if (['on','off'].indexOf(words[i]) > -1){
-         console.log(words[i]);
-         switchLight(words[i]);
-       }
-
      }
    }
     turnLight(color);
-    //console.log('color = ', color);
 }
 
 var stopParty = function(){
@@ -158,6 +143,67 @@ var discoParty = function () {
       return setInterval(function(){
         var rand = colors[Math.floor(Math.random()*colors.length)];
         turnLight(colorPalette[rand]);
+        /*motor control */
+        motor.servoWrite(pulseWidth);
+        pulseWidth += increment;
+        if (pulseWidth >= 2000) {
+          increment = -100;
+        } else if (pulseWidth <= 1000) {
+          increment = 100;
+        }
+
       },400);
 
 }
+
+var sevControl = function(){
+  setInterval(function () {
+    motor.servoWrite(pulseWidth);
+    pulseWidth += increment;
+    if (pulseWidth >= 2000) {
+      increment = -100;
+    } else if (pulseWidth <= 1000) {
+      increment = 100;
+    }
+  }, 1000);
+}
+
+/*rpio.open(PIR_PIN, rpio.INPUT);
+
+var isMoving = function(){
+  console.log('vao moving ...', rpio.read(PIR_PIN));
+
+  return (rpio.read(PIR_PIN) ? true : false);
+}
+
+var speak = function(text){
+
+    var params = {
+        text: text,
+        voice: TTSConfig.voice,
+        accept: 'audio/wav'
+    };
+    var text_to_speech = watson.text_to_speech({
+        username: TTSConfig.TTSUsername,
+        password: TTSConfig.TTSPassword,
+        version: 'v1'
+    });
+
+    tempStream = text_to_speech.synthesize(params).pipe(fs.createWriteStream('output.wav')).on('close', function() {
+        var create_audio = exec('aplay output.wav', function(error, stdout, stderr) {
+            if (error !== null) {
+                console.log('exec error: ' + error);
+            }
+        });
+    });
+}
+
+setInterval(function(){
+  var textToSpeak = "Hello Thien An, how are you doing?";
+  //console.log('Is moving ..', isMoving());
+  if (isMoving()==true){
+    console.log('prepare to speak ...');
+    speak(textToSpeak);
+  }
+},10000);
+*/
